@@ -1,0 +1,162 @@
+---
+title: "Reproducible Research > Week 2 > Course Project 1"
+author: "Tomislav Kralj"
+date: "03/08/2022"
+output: html_document
+---
+
+# Introduction
+
+We consider the data from a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
+
+The variables included in this dataset are:
+
+- steps: Number of steps taking in a 5-minute interval (missing values are coded as \color{red}{\verb|NA|}NA)
+
+- date: The date on which the measurement was taken in YYYY-MM-DD format
+
+- interval: Identifier for the 5-minute interval in which measurement was taken
+
+The dataset is stored in a comma-separated-value (CSV) file and there are a total of 17,568 observations in this dataset.
+
+# Loading and preprocessing the data
+
+```{r, echo=FALSE, results='hide'}
+library(lubridate, warn.conflicts=F, quietly=T)
+library(ggplot2, warn.conflicts=F, quietly=T)
+library(dplyr, warn.conflicts=F, quietly=T)
+library(tidyr, warn.conflicts=F, quietly=T)
+```
+
+We are ready to load `activity.csv`. Afterward, we can look at the beginning and the structure of the data. 
+
+```{r}
+activity <- read.csv("~/Reproducible-Research---Week-2-Project/activity.csv", stringsAsFactors=FALSE)
+head(activity)
+str(activity)
+```
+
+We can see that `date` column is `chr`, so we transform it into the date format. 
+
+```{r}
+activity$date <- ymd(activity$date)
+str(activity)
+```
+
+# What is mean total number of steps taken per day? 
+
+Let's group the data based on the date. 
+
+```{r}
+activity_grouped <- aggregate(activity$steps, by=list(Category=activity$date), FUN=sum)
+str(activity_grouped)
+names(activity_grouped)[1] <- "date"
+names(activity_grouped)[2] <- "steps"
+```
+
+We create the histogram of steps made in a day. We use `ggplot2` package to do so. 
+
+```{r}
+ggplot(activity_grouped, aes(steps)) + geom_histogram(aes(steps))
+```
+
+The mean and median of the total number of steps taken per day are calculated below. The `NA` values are ignored.
+
+```{r}
+mean(activity_grouped$steps, na.rm = TRUE)
+median(activity_grouped$steps, na.rm = TRUE)
+```
+
+One can make the observation that the mean and the median are relatively close to each other. That's because the histogram shows that the total number of steps taken per day has pretty symmetric distribution. 
+
+# What is the average daily activity pattern?
+
+We make a time series plot (i.e. \color{red}{\verb|type = "l"|}type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis). Firstly, for every five minute interval in a day, we average the number of steps taken with respect to days. 
+
+```{r}
+activity_by_interval <-activity %>% group_by(interval) %>% summarise(meanSteps = mean(steps, 
+    na.rm = TRUE))
+```
+
+Now, we are ready to make the required plot and find the interval with the highest mean number of steps. 
+
+```{r}
+ggplot(activity_by_interval, aes(interval, meanSteps)) + geom_line()
+location <- which(activity_by_interval$meanSteps == max(na.omit(activity_by_interval$meanSteps)))
+location
+activity_by_interval[location,]
+```
+
+One can see that interval 835 is the larger interval of the day with 206.1698 steps. 
+
+# Imputing missing values 
+
+The total number of missing values is equal to
+
+```{r}
+sum(is.na(activity$steps))
+```
+
+We devise a strategy for filling in all of the missing values in the dataset. The strategy will not be sophisticated - a missing value will be replaced with the mean for that 5-minute interval. Let's create a new dataset that is equal to the original dataset but with the missing data filled in.
+
+```{r}
+activity_mod <- merge(activity, activity_by_interval, by.x = "interval")
+activity_mod <- arrange(activity_mod, date, interval)
+#activity_mod$missing <- is.na(activity_mod$steps) 
+activity_mod$steps[is.na(activity_mod$steps)] <- activity_mod$meanSteps[is.na(activity_mod$steps)]
+```
+
+We make a histogram of the total number of steps taken each day and calculate and report the mean and median total number of steps taken per day. We basically repeat the same process as earlier. 
+
+```{r}
+activity_grouped_mod <- aggregate(activity_mod$steps, by=list(Category=activity_mod$date), FUN=sum)
+str(activity_grouped_mod)
+names(activity_grouped_mod)[1] <- "date"
+names(activity_grouped_mod)[2] <- "steps"
+```
+
+The histogram is given below. 
+
+```{r}
+ggplot(activity_grouped_mod, aes(steps)) + geom_histogram(aes(steps))
+```
+
+The mean and the median are also calculated below. 
+
+```{r}
+mean(activity_grouped_mod$steps, na.rm = TRUE)
+median(activity_grouped_mod$steps, na.rm = TRUE)
+```
+
+One can observe that the *new* mean is equal to the *old* mean, while the *new* median is equal to the *new* mean. 
+
+# Are there differences in activity patterns between weekdays and weekends?
+
+Let's create a new factor variable in the dataset with two levels – “weekday” and “weekend” indicating whether a given date is a weekday or weekend day. 
+
+```{r}
+activity$weekend <- weekdays(activity$date) == "Saturday" | weekdays(activity$date) == "Sunday"
+activity$type_of_day <- NULL
+activity$type_of_day[activity$weekend] = "Weekend"
+activity$type_of_day[!activity$weekend] = "Weekday"
+activity$weekend <- NULL
+activity$type_of_day <- factor(activity$type_of_day)
+str(activity)
+```
+
+Now, we aggregate the mean number of steps in an interval, both for the weekdays and the weekends. 
+
+```{r}
+weekday_agg <- aggregate(steps ~ interval, data = activity[activity$type_of_day == "Weekday", ], FUN = mean)
+weekend_agg <- aggregate(steps ~ interval, data = activity[activity$type_of_day == "Weekend", ], FUN = mean)
+
+weekday_agg$type_of_day <- rep("Weekday", length(weekday_agg[,1]))
+weekend_agg$type_of_day <- rep("Weekend", length(weekend_agg[,1]))
+
+total <- rbind(weekday_agg, weekend_agg)
+
+head(total)
+
+ggplot(data = total, mapping = aes(x = interval, y = steps)) +
+    geom_line() + facet_wrap(.~type_of_day, nrow = 2)
+```
